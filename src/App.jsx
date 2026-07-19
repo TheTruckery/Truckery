@@ -14,6 +14,16 @@ function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  // Event posting state
+  const [showEventForm, setShowEventForm] = useState(false)
+  const [trucks, setTrucks] = useState([])
+  const [selectedTruck, setSelectedTruck] = useState('')
+  const [eventDate, setEventDate] = useState('')
+  const [eventTime, setEventTime] = useState('')
+  const [location, setLocation] = useState('')
+  const [events, setEvents] = useState([])
+  const [eventMessage, setEventMessage] = useState('')
+
   useEffect(() => {
     checkSession()
   }, [])
@@ -29,15 +39,66 @@ function App() {
   const loadUserProfile = async (userId) => {
     const { data: clientData } = await supabase.from('clients').select('*').eq('id', userId).maybeSingle()
     if (clientData) {
-      setUser({ type: 'client', name: clientData.business_name })
+      setUser({ type: 'client', name: clientData.business_name, id: userId })
       setScreen('dashboard')
+      loadClientEvents(userId)
       return
     }
     const { data: truckData } = await supabase.from('food_trucks').select('*').eq('id', userId).maybeSingle()
     if (truckData) {
-      setUser({ type: 'truck', name: truckData.truck_name })
+      setUser({ type: 'truck', name: truckData.truck_name, id: userId })
       setScreen('dashboard')
+      loadTruckEvents(userId)
     }
+  }
+
+  const loadClientEvents = async (userId) => {
+    const { data } = await supabase
+      .from('events')
+      .select('*, food_trucks(truck_name, cuisine_type)')
+      .eq('client_id', userId)
+      .order('event_date', { ascending: true })
+    setEvents(data || [])
+  }
+
+  const loadTruckEvents = async (userId) => {
+    const { data } = await supabase
+      .from('events')
+      .select('*, clients(business_name)')
+      .eq('truck_id', userId)
+      .order('event_date', { ascending: true })
+    setEvents(data || [])
+  }
+
+  const loadTrucksList = async () => {
+    const { data } = await supabase.from('food_trucks').select('id, truck_name, cuisine_type')
+    setTrucks(data || [])
+  }
+
+  const openEventForm = () => {
+    loadTrucksList()
+    setShowEventForm(true)
+  }
+
+  const handlePostEvent = async (e) => {
+    e.preventDefault()
+    setEventMessage('Posting event...')
+    const { error } = await supabase.from('events').insert({
+      client_id: user.id,
+      truck_id: selectedTruck,
+      event_date: eventDate,
+      event_time: eventTime,
+      location: location,
+      status: 'confirmed',
+    })
+    if (error) {
+      setEventMessage('Error: ' + error.message)
+      return
+    }
+    setEventMessage('Event posted!')
+    setSelectedTruck(''); setEventDate(''); setEventTime(''); setLocation('')
+    setShowEventForm(false)
+    loadClientEvents(user.id)
   }
 
   const resetForm = () => {
@@ -58,6 +119,7 @@ function App() {
     await supabase.auth.signOut()
     setUser(null)
     setScreen('home')
+    setEvents([])
     resetForm()
   }
 
@@ -70,7 +132,7 @@ function App() {
       id: data.user.id, business_name: businessName, contact_email: email, phone,
     })
     if (insertError) { setMessage('Error saving details: ' + insertError.message); return }
-    setUser({ type: 'client', name: businessName })
+    setUser({ type: 'client', name: businessName, id: data.user.id })
     setScreen('dashboard')
     resetForm()
   }
@@ -84,7 +146,7 @@ function App() {
       id: data.user.id, truck_name: truckName, owner_name: ownerName, contact_email: email, phone, cuisine_type: cuisine,
     })
     if (insertError) { setMessage('Error saving details: ' + insertError.message); return }
-    setUser({ type: 'truck', name: truckName })
+    setUser({ type: 'truck', name: truckName, id: data.user.id })
     setScreen('dashboard')
     resetForm()
   }
@@ -225,11 +287,60 @@ function App() {
           <div className="card">
             <h2 style={{ marginTop: 0, color: '#1a2b4c' }}>Welcome, {user.name}! 👋</h2>
             <p style={{ color: '#666' }}>Account type: <strong>{user.type === 'client' ? 'Client' : 'Food Truck'}</strong></p>
-            <div style={{ marginTop: '30px', padding: '20px', background: '#fff4ec', borderRadius: '10px', border: '2px dashed #ff7a3d' }}>
-              <p style={{ margin: 0, color: '#d9622b', fontWeight: 700 }}>
-                🚧 Scheduling & event features coming in the next build stage!
-              </p>
-            </div>
+
+            {user.type === 'client' && (
+              <>
+                {!showEventForm && (
+                  <button className="btn-primary" style={{ marginTop: '20px' }} onClick={openEventForm}>
+                    + Post an Event
+                  </button>
+                )}
+
+                {showEventForm && (
+                  <form onSubmit={handlePostEvent} style={{ marginTop: '20px', padding: '20px', background: '#f9f9f9', borderRadius: '10px' }}>
+                    <h3 style={{ marginTop: 0, color: '#1a2b4c' }}>New Event</h3>
+                    <select className="input-field" value={selectedTruck} onChange={e => setSelectedTruck(e.target.value)} required>
+                      <option value="">Select a food truck...</option>
+                      {trucks.map(t => (
+                        <option key={t.id} value={t.id}>{t.truck_name} {t.cuisine_type ? `(${t.cuisine_type})` : ''}</option>
+                      ))}
+                    </select>
+                    <input className="input-field" type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} required />
+                    <input className="input-field" type="time" value={eventTime} onChange={e => setEventTime(e.target.value)} />
+                    <input className="input-field" placeholder="Location / Address" value={location} onChange={e => setLocation(e.target.value)} required />
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                      <button className="btn-primary" type="submit">Post Event</button>
+                      <button className="btn-link" type="button" onClick={() => setShowEventForm(false)}>Cancel</button>
+                    </div>
+                    {eventMessage && <p style={{ color: '#d9622b', fontWeight: 700 }}>{eventMessage}</p>}
+                  </form>
+                )}
+
+                <h3 style={{ marginTop: '30px', color: '#1a2b4c' }}>Your Upcoming Events</h3>
+                {events.length === 0 && <p style={{ color: '#888' }}>No events posted yet.</p>}
+                {events.map(ev => (
+                  <div key={ev.id} style={{ padding: '14px', border: '1px solid #eee', borderRadius: '8px', marginBottom: '10px' }}>
+                    <strong>{ev.food_trucks?.truck_name || 'Truck'}</strong> — {ev.event_date} {ev.event_time}
+                    <br /><span style={{ color: '#666' }}>{ev.location}</span>
+                    <br /><span style={{ color: '#d9622b', fontWeight: 700, fontSize: '13px' }}>{ev.status}</span>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {user.type === 'truck' && (
+              <>
+                <h3 style={{ marginTop: '30px', color: '#1a2b4c' }}>My Schedule</h3>
+                {events.length === 0 && <p style={{ color: '#888' }}>No events booked yet.</p>}
+                {events.map(ev => (
+                  <div key={ev.id} style={{ padding: '14px', border: '1px solid #eee', borderRadius: '8px', marginBottom: '10px' }}>
+                    <strong>{ev.clients?.business_name || 'Client'}</strong> — {ev.event_date} {ev.event_time}
+                    <br /><span style={{ color: '#666' }}>{ev.location}</span>
+                    <br /><span style={{ color: '#d9622b', fontWeight: 700, fontSize: '13px' }}>{ev.status}</span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </div>
       </div>
