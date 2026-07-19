@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 
 function App() {
-  const [screen, setScreen] = useState('home') // home, login, signupChoice, client, truck, dashboard
+  const [screen, setScreen] = useState('home')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [businessName, setBusinessName] = useState('')
@@ -14,7 +14,6 @@ function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // Check if someone's already logged in when the page loads/refreshes
   useEffect(() => {
     checkSession()
   }, [])
@@ -185,4 +184,59 @@ function App() {
               <button className="btn-primary" style={{ width: '100%', marginTop: '10px' }} type="submit">Sign Up</button>
             </form>
             {message && <p style={{ color: '#d9622b', fontWeight: 700 }}>{message}</p>}
-            <button className="btn-link"
+            <button className="btn-link" onClick={() => { setScreen('signupChoice'); resetForm() }}>← Back</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (screen === 'truck') {
+    return (
+      <div style={formPageStyle}>
+        <div style={formWrapStyle}>
+          <div className="card">
+            <h2 style={{ marginTop: 0, color: '#1a2b4c' }}>Food Truck Sign Up</h2>
+            <form onSubmit={handleTruckSignup}>
+              <input className="input-field" placeholder="Truck Name" value={truckName} onChange={e => setTruckName(e.target.value)} required />
+              <input className="input-field" placeholder="Owner Name" value={ownerName} onChange={e => setOwnerName(e.target.value)} required />
+              <input className="input-field" placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} required />
+              <input className="input-field" placeholder="Phone" value={phone} onChange={e => setPhone(e.target.value)} />
+              <input className="input-field" placeholder="Cuisine Type" value={cuisine} onChange={e => setCuisine(e.target.value)} />
+              <input className="input-field" placeholder="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} required />
+              <button className="btn-primary" style={{ width: '100%', marginTop: '10px' }} type="submit">Sign Up</button>
+            </form>
+            {message && <p style={{ color: '#d9622b', fontWeight: 700 }}>{message}</p>}
+            <button className="btn-link" onClick={() => { setScreen('signupChoice'); resetForm() }}>← Back</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (screen === 'dashboard' && user) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f4f4f4' }}>
+        <div style={{ background: '#1a2b4c', padding: '20px 40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ ...logoStyle, color: 'white' }}>🚚 TRUCKERY</div>
+          <button className="btn-secondary" onClick={handleLogout}>Log Out</button>
+        </div>
+        <div style={{ maxWidth: '700px', margin: '50px auto', padding: '0 20px' }}>
+          <div className="card">
+            <h2 style={{ marginTop: 0, color: '#1a2b4c' }}>Welcome, {user.name}! 👋</h2>
+            <p style={{ color: '#666' }}>Account type: <strong>{user.type === 'client' ? 'Client' : 'Food Truck'}</strong></p>
+            <div style={{ marginTop: '30px', padding: '20px', background: '#fff4ec', borderRadius: '10px', border: '2px dashed #ff7a3d' }}>
+              <p style={{ margin: 0, color: '#d9622b', fontWeight: 700 }}>
+                🚧 Scheduling & event features coming in the next build stage!
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return null
+}
+
+export default App
