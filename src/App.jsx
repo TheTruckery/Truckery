@@ -14,7 +14,6 @@ function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // Event posting state
   const [showEventForm, setShowEventForm] = useState(false)
   const [trucks, setTrucks] = useState([])
   const [selectedTruck, setSelectedTruck] = useState('')
@@ -23,6 +22,8 @@ function App() {
   const [location, setLocation] = useState('')
   const [events, setEvents] = useState([])
   const [eventMessage, setEventMessage] = useState('')
+
+  const [openGigs, setOpenGigs] = useState([])
 
   useEffect(() => {
     checkSession()
@@ -49,6 +50,7 @@ function App() {
       setUser({ type: 'truck', name: truckData.truck_name, id: userId })
       setScreen('dashboard')
       loadTruckEvents(userId)
+      loadOpenGigs()
     }
   }
 
@@ -68,6 +70,15 @@ function App() {
       .eq('truck_id', userId)
       .order('event_date', { ascending: true })
     setEvents(data || [])
+  }
+
+  const loadOpenGigs = async () => {
+    const { data } = await supabase
+      .from('availability_alerts')
+      .select('*, events(event_date, event_time, location, clients(business_name))')
+      .eq('status', 'open')
+      .order('alert_sent_at', { ascending: false })
+    setOpenGigs(data || [])
   }
 
   const loadTrucksList = async () => {
@@ -101,6 +112,60 @@ function App() {
     loadClientEvents(user.id)
   }
 
+  const handleCancelEvent = async (eventId) => {
+    const confirmed = window.confirm("Are you sure? This will notify the client and open this spot to other trucks.")
+    if (!confirmed) return
+
+    const { error: updateError } = await supabase
+      .from('events')
+      .update({ status: 'cancelled' })
+      .eq('id', eventId)
+
+    if (updateError) {
+      alert('Error cancelling event: ' + updateError.message)
+      return
+    }
+
+    const { error: alertError } = await supabase
+      .from('availability_alerts')
+      .insert({ event_id: eventId, status: 'open' })
+
+    if (alertError) {
+      alert('Event cancelled, but error creating alert: ' + alertError.message)
+    }
+
+    loadTruckEvents(user.id)
+  }
+
+  const handleClaimGig = async (alertId, eventId) => {
+    const confirmed = window.confirm("Claim this gig? The event will be reassigned to you.")
+    if (!confirmed) return
+
+    const { error: alertError } = await supabase
+      .from('availability_alerts')
+      .update({ status: 'claimed', claimed_by_truck_id: user.id })
+      .eq('id', alertId)
+
+    if (alertError) {
+      alert('Error claiming gig: ' + alertError.message)
+      return
+    }
+
+    const { error: eventError } = await supabase
+      .from('events')
+      .update({ truck_id: user.id, status: 'confirmed' })
+      .eq('id', eventId)
+
+    if (eventError) {
+      alert('Gig claimed, but error updating event: ' + eventError.message)
+      return
+    }
+
+    alert('Gig claimed! Check your schedule.')
+    loadTruckEvents(user.id)
+    loadOpenGigs()
+  }
+
   const resetForm = () => {
     setEmail(''); setPassword(''); setBusinessName(''); setTruckName('')
     setOwnerName(''); setPhone(''); setCuisine(''); setMessage('')
@@ -120,6 +185,7 @@ function App() {
     setUser(null)
     setScreen('home')
     setEvents([])
+    setOpenGigs([])
     resetForm()
   }
 
@@ -322,7 +388,10 @@ function App() {
                   <div key={ev.id} style={{ padding: '14px', border: '1px solid #eee', borderRadius: '8px', marginBottom: '10px' }}>
                     <strong>{ev.food_trucks?.truck_name || 'Truck'}</strong> — {ev.event_date} {ev.event_time}
                     <br /><span style={{ color: '#666' }}>{ev.location}</span>
-                    <br /><span style={{ color: '#d9622b', fontWeight: 700, fontSize: '13px' }}>{ev.status}</span>
+                    <br /><span style={{
+                      color: ev.status === 'cancelled' ? '#c0392b' : '#2e7d32',
+                      fontWeight: 700, fontSize: '13px', textTransform: 'uppercase'
+                    }}>{ev.status}</span>
                   </div>
                 ))}
               </>
@@ -330,13 +399,46 @@ function App() {
 
             {user.type === 'truck' && (
               <>
+                {openGigs.length > 0 && (
+                  <div style={{ marginTop: '20px', padding: '20px', background: '#fff4ec', borderRadius: '10px', border: '2px solid #ff7a3d' }}>
+                    <h3 style={{ marginTop: 0, color: '#d9622b' }}>🚨 Open Gigs — Claim Now!</h3>
+                    {openGigs.map(gig => (
+                      <div key={gig.id} style={{ padding: '12px', background: 'white', borderRadius: '8px', marginBottom: '10px' }}>
+                        <strong>{gig.events?.clients?.business_name || 'A client'}</strong> needs a truck
+                        <br /><span style={{ color: '#666' }}>{gig.events?.event_date} {gig.events?.event_time} — {gig.events?.location}</span>
+                        <br />
+                        <button
+                          className="btn-primary"
+                          style={{ marginTop: '10px', padding: '10px 16px', fontSize: '14px' }}
+                          onClick={() => handleClaimGig(gig.id, gig.event_id)}
+                        >
+                          Claim This Gig
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <h3 style={{ marginTop: '30px', color: '#1a2b4c' }}>My Schedule</h3>
                 {events.length === 0 && <p style={{ color: '#888' }}>No events booked yet.</p>}
                 {events.map(ev => (
                   <div key={ev.id} style={{ padding: '14px', border: '1px solid #eee', borderRadius: '8px', marginBottom: '10px' }}>
                     <strong>{ev.clients?.business_name || 'Client'}</strong> — {ev.event_date} {ev.event_time}
                     <br /><span style={{ color: '#666' }}>{ev.location}</span>
-                    <br /><span style={{ color: '#d9622b', fontWeight: 700, fontSize: '13px' }}>{ev.status}</span>
+                    <br /><span style={{
+                      color: ev.status === 'cancelled' ? '#c0392b' : '#2e7d32',
+                      fontWeight: 700, fontSize: '13px', textTransform: 'uppercase'
+                    }}>{ev.status}</span>
+                    {ev.status === 'confirmed' && (
+                      <div>
+                        <button
+                          onClick={() => handleCancelEvent(ev.id)}
+                          style={{ marginTop: '10px', background: 'none', border: '1px solid #c0392b', color: '#c0392b', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontWeight: 700, fontSize: '13px' }}
+                        >
+                          Can't Make It
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </>
